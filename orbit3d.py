@@ -1,4 +1,5 @@
 import numpy as np
+from plotly import express as px
 from scipy.spatial.transform import Rotation
 
 from orbit2d import get_2dtrajectory
@@ -26,3 +27,12 @@ def get_3dtrajectory(rin: np.ndarray, vin: np.ndarray, k: float) -> tuple:
     return (thetai, thetaf), \
         lambda thetas: rotation.apply(r2d(thetas)), \
         ts
+
+def plot_3dtraj(rin: np.ndarray, vin: np.ndarray, k: float, n_points: int = 100, filepath: str = ''):
+    (thetai, thetaf), xs, _ = get_3dtrajectory(rin, vin, k)
+    thetas = np.linspace(thetai, thetaf, n_points)
+
+    fig = px.line_3d(x=xs(thetas).T[0], y=xs(thetas).T[1], z=xs(thetas).T[2])
+    if filepath:
+        fig.write_html(filepath)
+    fig.show()
