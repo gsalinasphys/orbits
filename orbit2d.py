@@ -2,8 +2,9 @@ from math import acos, atan, cos, sqrt
 
 import numpy as np
 from matplotlib import pyplot as plt
-from scipy.integrate import quad
+from mpmath import mp, quad
 
+mp.dps = 20
 
 def get_2dtrajectory(d0: float, b: float, v0: float, k: float) -> tuple:
     semilatus = (v0 * b) ** 2 / k
@@ -16,7 +17,7 @@ def get_2dtrajectory(d0: float, b: float, v0: float, k: float) -> tuple:
 
     return (thetai, 2*theta0-thetai), \
         lambda thetas: semilatus / (1 + eccentricity*np.cos(thetas - theta0)), \
-        np.vectorize(lambda thetaf: quad(dt, thetai, thetaf))
+        np.vectorize(lambda thetaf: quad(dt, [thetai, thetaf]))
 
 
 def plot_2dtraj(d0: float, b: float, v0: float, k: float, n_points=100) -> None:
