@@ -5,6 +5,8 @@ from scipy.spatial.transform import Rotation
 
 from orbit2d import get_2dtrajectory
 
+mp.mp.dps = 50
+
 
 def _rotation(rin: np.ndarray, vin: np.ndarray) -> np.ndarray:
     v0 = np.linalg.norm(vin)
