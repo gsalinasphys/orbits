@@ -7,12 +7,12 @@ from orbit2d import get_2dtrajectory
 
 mp.mp.dps = 50
 
-def _twodim_params(rin: mp.matrix, vin: mp.matrix) -> tuple:
-    v0 = mp.norm(vin)
-    b = mp.norm(np.cross(rin, vin)) / v0
-    d0 = mp.sqrt(mp.norm(rin)**2 - b**2)
+def _twodim_params(r0: mp.matrix, v0: mp.matrix) -> tuple:
+    v02d = mp.norm(v0)
+    b = mp.norm(np.cross(r0, v0)) / v02d
+    d0 = mp.sqrt(mp.norm(r0)**2 - b**2)
 
-    return d0, b, mp.sign(np.dot(rin, vin)) * v0
+    return d0, b, mp.sign(np.dot(r0, v0)) * v0
 
 def _cross_matrix(v: mp.matrix) -> mp.matrix:
     return mp.matrix([[0., -v[2], v[1]], [v[2], 0., -v[0]], [-v[1], v[0], 0.]])
@@ -20,59 +20,55 @@ def _cross_matrix(v: mp.matrix) -> mp.matrix:
 def _rotation_matrix(angle: float, unit_vector: mp.matrix) -> mp.matrix:
     return mp.cos(angle)*mp.eye(3) + mp.sin(angle)*_cross_matrix(unit_vector) + (1-mp.cos(angle))*unit_vector*unit_vector.T
 
-def _rotate_r(rin: mp.matrix) -> mp.matrix:
-    angle = -mp.atan(rin[2]/rin[1]) if rin[1] else mp.pi/2
+def _rotate_r(r0: mp.matrix) -> mp.matrix:
+    angle = -mp.atan(r0[2]/r0[1]) if r0[1] else mp.pi/2
     rotation = _rotation_matrix(angle, mp.matrix([1., 0, 0]))
-    r2 = rotation * rin
-    angle2 = -mp.atan(r2[1]/r2[0]) if r2[0] else mp.pi/2
+    r1 = rotation * r0
+    angle2 = -mp.atan(r1[1]/r1[0]) if r1[0] else mp.pi/2
     rotation2 = _rotation_matrix(angle2, mp.matrix([0., 0, 1]))
-    r3 = rotation2 * r2
+    r2 = rotation2 * r1
     factor = 1.
-    if r3[0] < 0:
+    if r2[0] < 0:
         factor *= _rotation_matrix(mp.pi, mp.matrix([0., 0, 1]))
 
     return factor * rotation2 * rotation
 
-def _rotate(rin: mp.matrix, vin: mp.matrix) -> mp.matrix:
-    rotation1 = _rotate_r(rin)
-    r2, v2 = rotation1 * rin, rotation1 * vin
-    angle = -mp.atan(v2[2]/v2[1]) if v2[1] else mp.pi/2
+def _rotate(r0: mp.matrix, v0: mp.matrix) -> mp.matrix:
+    rotation1 = _rotate_r(r0)
+    r1, v1 = rotation1 * r0, rotation1 * v0
+    angle = -mp.atan(v1[2]/v1[1]) if v1[1] else mp.pi/2
     rotation2 = _rotation_matrix(angle, mp.matrix([1., 0, 0]))
-    v3 = rotation2 * v2
-    angle2 = -mp.atan(v3[1]/v3[0]) if v3[0] else mp.pi/2
+    v2 = rotation2 * v1
+    angle2 = -mp.atan(v2[1]/v2[0]) if v2[0] else mp.pi/2
     rotation3 = _rotation_matrix(angle2, mp.matrix([0, 0, 1]))
-    r3 = rotation3 * r2
+    r2 = rotation3 * r1
     factor = 1.
 
-    if r3[1] < 0:
+    if r2[1] < 0:
         factor *= _rotation_matrix(mp.pi, mp.matrix([1., 0, 0]))
 
     return (factor * rotation3 * rotation2 * rotation1) ** (-1)
 
-def get_3dtrajectory(rin: mp.matrix, vin: mp.matrix, k: float) -> tuple:
-    rotation = _rotate(rin, vin)
-    d0, b, v0 = _twodim_params(rin, vin)
-    (thetamin, thetamax), rs, rdots, thetadots, ts = get_2dtrajectory(d0, b, v0, k)
+def get_3dtrajectory(r0: mp.matrix, v0: mp.matrix, k: float) -> tuple:
+    d0, b, v0 = _twodim_params(r0, v0)
+    (thetamin, thetamax), r, rdot, thetadot, t = get_2dtrajectory(d0, b, v0, k)
 
-    x2d = np.vectorize(lambda theta: rs(theta) * mp.cos(theta))
-    y2d = np.vectorize(lambda theta: rs(theta) * mp.sin(theta))
-    r2d = lambda thetas: np.array([x2d(thetas), y2d(thetas), mp.matrix([[0]*len(thetas)])]).T
-    r3d = lambda thetas: np.array([rotation * mp.matrix(r2d_val) for r2d_val in r2d(thetas)])
+    rotation = _rotate(r0, v0)
 
-    vx2d = np.vectorize(lambda theta: rdots(theta)*mp.cos(theta) - rs(theta)*thetadots(theta)*mp.sin(theta))
-    vy2d = np.vectorize(lambda theta: rdots(theta)*mp.sin(theta) + rs(theta)*thetadots(theta)*mp.cos(theta))
-    v2d = lambda thetas: np.array([vx2d(thetas), vy2d(thetas), mp.matrix([[0]*len(thetas)])]).T
-    v3d = lambda thetas: np.array([rotation * mp.matrix(v2d_val) for v2d_val in v2d(thetas)])
-    
-    return (thetamin, thetamax), r3d, v3d, ts
+    r3d = lambda theta: rotation * mp.matrix([r(theta) * mp.cos(theta), r(theta) * mp.sin(theta), 0.])
+    v3d = lambda theta: rotation * mp.matrix([rdot(theta)*mp.cos(theta) - r(theta)*thetadot(theta)*mp.sin(theta),
+                                            rdot(theta)*mp.sin(theta) + r(theta)*thetadot(theta)*mp.cos(theta),
+                                            0.])
 
-def plot_3dtraj(rin: np.ndarray, vin: np.ndarray, k: float, n_points: int = 10_000, filepath: str = ''):
-    (thetamin, thetamax), r3ds, *_ = get_3dtrajectory(rin, vin, k)
+    return (thetamin, thetamax), r3d, v3d, t
+
+def plot_3dtraj(r0: mp.matrix, v0: mp.matrix, k: float, n_points: int = 10_000, filepath: str = ''):
+    (thetamin, thetamax), r, *_ = get_3dtrajectory(r0, v0, k)
     thetas = mp.linspace(thetamin, thetamax, n_points)[1:-1]
 
-    xs, ys, zs = r3ds(thetas).T
+    rs = np.array([r(theta) for theta in thetas], dtype=float)
 
-    fig = px.line_3d(x=np.array(xs, dtype=float), y=np.array(ys, dtype=float), z=np.array(zs, dtype=float))
+    fig = px.line_3d(x=rs[:, 0], y=rs[:, 1], z=rs[:, 2])
     if filepath:
         fig.write_html(filepath)
     fig.show()
