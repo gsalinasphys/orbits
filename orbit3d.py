@@ -12,7 +12,7 @@ def _twodim_params(r0: mp.matrix, v0: mp.matrix) -> tuple:
     b = mp.norm(np.cross(r0, v0)) / v02d
     d0 = mp.sqrt(mp.norm(r0)**2 - b**2)
 
-    return d0, b, mp.sign(np.dot(r0, v0)) * v0
+    return d0, b, mp.sign(np.dot(r0, v0)) * v02d
 
 def _cross_matrix(v: mp.matrix) -> mp.matrix:
     return mp.matrix([[0., -v[2], v[1]], [v[2], 0., -v[0]], [-v[1], v[0], 0.]])
@@ -50,8 +50,8 @@ def _rotate(r0: mp.matrix, v0: mp.matrix) -> mp.matrix:
     return (factor * rotation3 * rotation2 * rotation1) ** (-1)
 
 def get_3dtrajectory(r0: mp.matrix, v0: mp.matrix, k: float) -> tuple:
-    d0, b, v0 = _twodim_params(r0, v0)
-    (thetamin, thetamax), r, rdot, thetadot, t = get_2dtrajectory(d0, b, v0, k)
+    d0, b, v02d = _twodim_params(r0, v0)
+    (thetamin, _, thetamax), r, rdot, thetadot, t = get_2dtrajectory(d0, b, v02d, k)
 
     rotation = _rotate(r0, v0)
 
