@@ -60,14 +60,15 @@ def get_time(r02d: mp.matrix, v02d: mp.matrix, k: float, t0: float = 0.) -> Call
     return t
 
 def get_2dtrajectory(r02d: mp.matrix, v02d: mp.matrix, k: float, t0: float = 0.) -> tuple:
-    Jbar, _, semilatus, eccentricity = get_orbit_params(r02d, v02d, k)
     theta0 = mp.atan(r02d[1] / r02d[0]) + (1-mp.sign(r02d[0]))/2*mp.pi if r02d[0] else mp.sign(r02d[1])*mp.pi/2
     thetamin, thetamax = get_thetas(r02d, v02d, k)
-    thetaclose = (thetamin + thetamax) / 2.
     r, rdot, thetadot = get_rv2d(r02d, v02d, k)
     t = get_time(r02d, v02d, k, t0)
+    thetas = [thetamin, theta0, thetamax]
+    if t((2*thetamin+thetamax)/3) > t((thetamin+2*thetamax)/3):
+        thetas.reverse()
 
-    return (thetamin, theta0, thetamax), r, rdot, thetadot, t
+    return tuple(thetas), r, rdot, thetadot, t
 
 def plot_2dtraj(r02d: mp.matrix, v02d: mp.matrix, k: float, n_points: int = 10_000, theta_range: tuple = None):
     (thetamin, _, thetamax), r, *_ = get_2dtrajectory(r02d, v02d, k)
@@ -80,3 +81,8 @@ def plot_2dtraj(r02d: mp.matrix, v02d: mp.matrix, k: float, n_points: int = 10_0
     ys = [r(theta)*mp.sin(theta) for theta in thetas]
 
     plt.plot(xs, ys)
+
+def get_min_approach(r02d: mp.matrix, v02d: mp.matrix, k: float) -> float:
+    *_, semilatus, eccentricity = get_orbit_params(r02d, v02d, k)
+
+    return semilatus / (1+eccentricity)
