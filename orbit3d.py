@@ -1,9 +1,8 @@
 import mpmath as mp
 import numpy as np
 from plotly import express as px
-from scipy.spatial.transform import Rotation
 
-from orbit2d import get_2dtrajectory
+from orbit2d import get_2dtrajectory, get_orbit_params
 
 mp.mp.dps = 50
 
@@ -38,13 +37,17 @@ def get_3dtrajectory(r0: mp.matrix, v0: mp.matrix, k: float) -> tuple:
 
     return (thetamin, thetamax), r3d, v3d, t
 
-def plot_3dtraj(r0: mp.matrix, v0: mp.matrix, k: float, n_points: int = 10_000, filepath: str = ''):
+def plot_3dtraj(r0: mp.matrix, v0: mp.matrix, k: float, n_points: int = 10_000):
     (thetamin, thetamax), r, *_ = get_3dtrajectory(r0, v0, k)
     thetas = mp.linspace(thetamin, thetamax, n_points)[1:-1]
 
     rs = np.array([r(theta) for theta in thetas], dtype=float)
 
-    fig = px.line_3d(x=rs[:, 0], y=rs[:, 1], z=rs[:, 2])
-    if filepath:
-        fig.write_html(filepath)
-    fig.show()
+    return px.line_3d(x=rs[:, 0], y=rs[:, 1], z=rs[:, 2])
+
+def get_min_approach3d(r0: mp.matrix, v0: mp.matrix, k: float) -> float:
+    rotation = _rotate(r0, v0)
+    r02d, v02d = rotation * r0, rotation * v0
+    *_, semilatus, eccentricity = get_orbit_params(r02d[:2], v02d[:2], k)
+
+    return semilatus / (1+eccentricity)

@@ -1,9 +1,11 @@
 import mpmath as mp
 import numpy as np
 from matplotlib import pyplot as plt
+from plotly import express as px
 from scipy.optimize import root_scalar
 
 from orbit2d import get_2dtrajectory, get_min_approach, plot_2dtraj
+from orbit3d import _rotate, get_3dtrajectory, get_min_approach3d, plot_3dtraj
 
 mp.mp.dps = 50
 
@@ -43,6 +45,7 @@ def plot_2dtraj_in_ns(rin: mp.matrix, vin: mp.matrix, tin: float, k: float, radi
 def find_ns_exit(rin: mp.matrix, vin: mp.matrix, tin: float, k: float, radius: float, n_points: int = 10_000) -> tuple:
     omega = mp.sqrt(k / radius**3)
     r2d, v2d = get_2dtraj_in_ns(rin, vin, tin, k, radius)
+
     to_root = lambda angle: mp.norm(r2d(angle/omega+tin)) - radius
 
     angles = mp.linspace(0, 2*mp.pi, n_points, endpoint=False)
@@ -68,12 +71,13 @@ def get_2dtraj_through_ns(r02d: mp.matrix, v02d: mp.matrix, k: float, radius: fl
 
     outfall = get_2dtrajectory(rout, vout, k)
 
-    return (infall[0][0], thetain, outfall[0][1], outfall[0][2]), infall[1:-1] + (tinfall, ), outfall[1:]
+    thetamin, thetaout, thetamax = infall[0][0], outfall[0][1], outfall[0][2]
+    return (thetamin, thetain, thetaout, thetamax), infall[1:-1] + (tinfall, ), outfall[1:]
 
 def plot_2dtraj_through_ns(r02d: mp.matrix, v02d: mp.matrix, k: float, radius: float, n_points: int = 10_000) -> None:
     thetas, *_ = get_2dtraj_through_ns(r02d, v02d, k, radius)
     thetas_infall = mp.linspace(thetas[0], thetas[1], n_points)[1:]
-    plot_2dtraj(r02d, v02d, k, n_points, (thetas_infall[0], thetas_infall[-1]))
+    plotin = plot_2dtraj(r02d, v02d, k, n_points, (thetas_infall[0], thetas_infall[-1]))
 
     thetain, r2din, rdotin, thetadotin, tin = enter_ns(r02d, v02d, k, radius)
 
@@ -81,12 +85,14 @@ def plot_2dtraj_through_ns(r02d: mp.matrix, v02d: mp.matrix, k: float, radius: f
     vin = mp.matrix([rdotin*mp.cos(thetain) - r2din*thetadotin*mp.sin(thetain),
                     rdotin*mp.sin(thetain) + r2din*thetadotin*mp.cos(thetain)])
 
-    plot_2dtraj_in_ns(rin, vin, tin, k, radius)
+    plotns = plot_2dtraj_in_ns(rin, vin, tin, k, radius)
 
     thetas_outfall = mp.linspace(thetas[-2], thetas[-1], n_points)[:-1]
     rout, vout, _ = find_ns_exit(rin, vin, tin, k, radius)
 
-    plot_2dtraj(rout, vout, k, n_points, (thetas_outfall[0], thetas_outfall[-1]))
+    plotout = plot_2dtraj(rout, vout, k, n_points, (thetas_outfall[0], thetas_outfall[-1]))
+
+    return plotin, plotns, plotout
 
 def get_2dtraj_ns(r02d: mp.matrix, v02d: mp.matrix, k: float, radius: float, t0: float = 0.) -> tuple:
     min_approach = get_min_approach(r02d, v02d, k)
@@ -98,6 +104,55 @@ def get_2dtraj_ns(r02d: mp.matrix, v02d: mp.matrix, k: float, radius: float, t0:
 def plot_2dtraj_ns(r02d: mp.matrix, v02d: mp.matrix, k: float, radius: float, n_points: int = 10_000) -> None:
     min_approach = get_min_approach(r02d, v02d, k)
     if min_approach > radius:
-        plot_2dtraj(r02d, v02d, k, n_points)
+        return plot_2dtraj(r02d, v02d, k, n_points)
     else:
-        plot_2dtraj_through_ns(r02d, v02d, k, radius, n_points)
+        return plot_2dtraj_through_ns(r02d, v02d, k, radius, n_points)
+
+def get_3dtraj_through_ns(r0: mp.matrix, v0: mp.matrix, k: float, radius: float) -> tuple:
+    rotation = _rotate(r0, v0)
+    r02d, v02d = rotation * r0, rotation * v0
+
+    thetas, infall, outfall = get_2dtraj_through_ns(r02d[:2], v02d[:2], k, radius)
+
+    rotation_inv = rotation**(-1)
+    rinfall, rdotinfall, thetadotinfall, tinfall = infall
+    r3dinfall = lambda theta: rotation_inv * mp.matrix([rinfall(theta) * mp.cos(theta), rinfall(theta) * mp.sin(theta), 0.])
+    v3dinfall = lambda theta: rotation_inv * mp.matrix([rdotinfall(theta)*mp.cos(theta) - rinfall(theta)*thetadotinfall(theta)*mp.sin(theta),
+                                                rdotinfall(theta)*mp.sin(theta) + rinfall(theta)*thetadotinfall(theta)*mp.cos(theta),
+                                                0.])
+    infall3d = r3dinfall, v3dinfall, tinfall
+
+    routfall, rdotoutfall, thetadotoutfall, toutfall = outfall
+    r3doutfall = lambda theta: rotation_inv * mp.matrix([routfall(theta) * mp.cos(theta), routfall(theta) * mp.sin(theta), 0.])
+    v3doutfall = lambda theta: rotation_inv * mp.matrix([rdotoutfall(theta)*mp.cos(theta) - routfall(theta)*thetadotoutfall(theta)*mp.sin(theta),
+                                                rdotoutfall(theta)*mp.sin(theta) + routfall(theta)*thetadotoutfall(theta)*mp.cos(theta),
+                                                0.])
+    outfall3d = r3doutfall, v3doutfall, toutfall
+
+    return thetas, infall3d, outfall3d
+
+def plot_3dtraj_through_ns(r0: mp.matrix, v0: mp.matrix, k: float, radius: float, n_points: int = 10_000):
+    (thetamin, thetain, thetaout, thetamax), infall2d, outfall3d = get_3dtraj_through_ns(r0, v0, k, radius)
+    thetasin = mp.linspace(thetamin, thetain, n_points)[1:-1]
+    thetasout = mp.linspace(thetaout, thetamax, n_points)[1:-1]
+
+    rsin = np.array([infall2d[0](theta) for theta in thetasin], dtype=float)
+    rsout = np.array([outfall3d[0](theta) for theta in thetasout], dtype=float)
+    rs = np.concatenate((rsin, rsout))
+    print(len(rs))
+
+    return px.line_3d(x=rs[:, 0], y=rs[:, 1], z=rs[:, 2])
+
+def get_3dtraj_ns(r0: mp.matrix, v0: mp.matrix, k: float, radius: float, t0: float = 0.) -> tuple:
+    min_approach = get_min_approach3d(r0, v0, k)
+    if min_approach > radius:
+        return get_3dtrajectory(r0, v0, k, t0)
+    else:
+        return get_3dtraj_through_ns(r0, v0, k, radius, t0)
+
+def plot_3dtraj_ns(r0: mp.matrix, v0: mp.matrix, k: float, radius: float, n_points: int = 10_000) -> None:
+    min_approach = get_min_approach3d(r0, v0, k)
+    if min_approach > radius:
+        return plot_3dtraj(r0, v0, k, n_points)
+    else:
+        return plot_3dtraj_through_ns(r0, v0, k, radius, n_points)

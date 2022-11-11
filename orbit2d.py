@@ -80,7 +80,7 @@ def plot_2dtraj(r02d: mp.matrix, v02d: mp.matrix, k: float, n_points: int = 10_0
     xs = [r(theta)*mp.cos(theta) for theta in thetas]
     ys = [r(theta)*mp.sin(theta) for theta in thetas]
 
-    plt.plot(xs, ys)
+    return plt.plot(xs, ys)
 
 def get_min_approach(r02d: mp.matrix, v02d: mp.matrix, k: float) -> float:
     *_, semilatus, eccentricity = get_orbit_params(r02d, v02d, k)
