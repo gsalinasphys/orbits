@@ -1,42 +1,53 @@
 import mpmath as mp
 import numpy as np
 from plotly import express as px
-from scipy.spatial.transform import Rotation
 
-from orbit2d import get_2dtrajectory
+from orbit2d import get_2dtrajectory, get_orbit_params
 
 mp.mp.dps = 50
 
+def _cross_matrix(v: mp.matrix) -> mp.matrix:
+    return mp.matrix([[0., -v[2], v[1]], [v[2], 0., -v[0]], [-v[1], v[0], 0.]])
 
-def _rotation(rin: np.ndarray, vin: np.ndarray) -> np.ndarray:
-    v0 = np.linalg.norm(vin)
-    b = np.linalg.norm(np.cross(rin, vin)) / v0
-    d0 = np.sqrt(np.linalg.norm(rin)**2 - b**2)
+def _rotation_matrix(angle: float, unit_vector: mp.matrix) -> mp.matrix:
+    return mp.cos(angle)*mp.eye(3) + mp.sin(angle)*_cross_matrix(unit_vector) + (1-mp.cos(angle))*unit_vector*unit_vector.T
 
-    r2d, v2d = np.array([d0, b, 0.]), np.array([-v0, 0., 0.])
-    rotation, _ = Rotation.align_vectors(np.array([rin, vin]), np.array([r2d, v2d]))
+def _rotate(r0: mp.matrix, v0: mp.matrix) -> mp.matrix:
+    angle = -mp.atan(r0[2]/r0[1]) if r0[1] else mp.pi/2
+    rotation1 = _rotation_matrix(angle, mp.matrix([1., 0, 0]))
+    r1 = rotation1 * r0
+    angle2 = -mp.atan(r1[1]/r1[0]) if r1[0] else mp.pi/2
+    rotation2 = _rotation_matrix(angle2, mp.matrix([0., 0, 1]))
+    v2 = rotation2 * rotation1 * v0
+    angle3 = -mp.atan(v2[2]/v2[1]) if v2[1] else mp.pi/2
+    rotation3 = _rotation_matrix(angle3, mp.matrix([1., 0, 0]))
 
-    return (d0, b, v0), rotation
+    return rotation3 * rotation2 * rotation1
 
-def get_3dtrajectory(rin: np.ndarray, vin: np.ndarray, k: float) -> tuple:
-    (d0, b, v0), rotation = _rotation(rin, vin)
-    d0, b, v0, k = mp.mpf(d0), mp.mpf(b), mp.mpf(v0), mp.mpf(k)
-    (thetai, thetaf), rs, ts = get_2dtrajectory(d0, b, v0, k)
+def get_3dtrajectory(r0: mp.matrix, v0: mp.matrix, k: float) -> tuple:
+    rotation = _rotate(r0, v0)
+    r02d, v02d = rotation * r0, rotation * v0
+    (thetamin, _, thetamax), r, rdot, thetadot, t = get_2dtrajectory(r02d[:2], v02d[:2], k)
 
-    x = np.vectorize(lambda theta: rs(theta) * mp.cos(theta))
-    y = np.vectorize(lambda theta: rs(theta) * mp.sin(theta))
+    rotation_inv = rotation**(-1)
+    r3d = lambda theta: rotation_inv * mp.matrix([r(theta) * mp.cos(theta), r(theta) * mp.sin(theta), 0.])
+    v3d = lambda theta: rotation_inv * mp.matrix([rdot(theta)*mp.cos(theta) - r(theta)*thetadot(theta)*mp.sin(theta),
+                                            rdot(theta)*mp.sin(theta) + r(theta)*thetadot(theta)*mp.cos(theta),
+                                            0.])
 
-    r2d = lambda thetas: np.array([x(thetas), y(thetas), np.zeros(len(thetas))], dtype=float).T
-    
-    return (thetai, thetaf), \
-        lambda thetas: rotation.apply(r2d(thetas)), \
-        ts
+    return (thetamin, thetamax), r3d, v3d, t
 
-def plot_3dtraj(rin: np.ndarray, vin: np.ndarray, k: float, n_points: int = 100, filepath: str = ''):
-    (thetai, thetaf), xs, _ = get_3dtrajectory(rin, vin, k)
-    thetas = mp.linspace(thetai, thetaf, n_points)
+def plot_3dtraj(r0: mp.matrix, v0: mp.matrix, k: float, n_points: int = 10_000):
+    (thetamin, thetamax), r, *_ = get_3dtrajectory(r0, v0, k)
+    thetas = mp.linspace(thetamin, thetamax, n_points)[1:-1]
 
-    fig = px.line_3d(x=xs(thetas).T[0], y=xs(thetas).T[1], z=xs(thetas).T[2])
-    if filepath:
-        fig.write_html(filepath)
-    fig.show()
+    rs = np.array([r(theta) for theta in thetas], dtype=float)
+
+    return px.line_3d(x=rs[:, 0], y=rs[:, 1], z=rs[:, 2])
+
+def get_min_approach3d(r0: mp.matrix, v0: mp.matrix, k: float) -> float:
+    rotation = _rotate(r0, v0)
+    r02d, v02d = rotation * r0, rotation * v0
+    *_, semilatus, eccentricity = get_orbit_params(r02d[:2], v02d[:2], k)
+
+    return semilatus / (1+eccentricity)
