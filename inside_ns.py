@@ -1,3 +1,5 @@
+from typing import Callable
+
 import mpmath as mp
 import numpy as np
 from matplotlib import pyplot as plt
@@ -9,19 +11,38 @@ from orbit3d import _rotate, get_3dtrajectory, get_min_approach3d, plot_3dtraj
 
 mp.mp.dps = 50
 
+def newton(f: Callable, fprime: Callable, x0: mp.mpf, tol: float = 1e-12, maxiters: int = 100):
+    i = 0
+    while abs(f(x0)) > tol:
+        i += 1
+        if i > maxiters:
+            return None
+        x0 -= f(x0)/fprime(x0)  # Newton-Raphson
+        
+    return x0
+
+# def enter_ns(r02d: mp.matrix, v02d: mp.matrix, k: float, radius: float, t0: float = 0.) -> tuple:
+#     (thetamin, _, thetamax), r, rdot, thetadot, t = get_2dtrajectory(r02d, v02d, k, t0)
+#     thetaclose = (thetamin+thetamax) / 2.
+
+#     try:
+#         root_found = root_scalar(lambda theta: mp.norm(r(theta))-radius, bracket=(thetamin, thetaclose), xtol=1e-15, rtol=1e-15)
+#         if root_found.converged:
+#             return mp.mpf(root_found.root), r(root_found.root), rdot(root_found.root), thetadot(root_found.root), t(root_found.root)
+#         else:
+#             return None
+#     except ValueError as e:
+#         print(e)
+#         return None
+
 def enter_ns(r02d: mp.matrix, v02d: mp.matrix, k: float, radius: float, t0: float = 0.) -> tuple:
     (thetamin, _, thetamax), r, rdot, thetadot, t = get_2dtrajectory(r02d, v02d, k, t0)
     thetaclose = (thetamin+thetamax) / 2.
 
-    try:
-        root_found = root_scalar(lambda theta: mp.norm(r(theta))-radius, bracket=(thetamin, thetaclose), xtol=1e-15, rtol=1e-15)
-        if root_found.converged:
-            return mp.mpf(root_found.root), r(root_found.root), rdot(root_found.root), thetadot(root_found.root), t(root_found.root)
-        else:
-            return None
-    except ValueError as e:
-        print(e)
-        return None
+    to_root = lambda theta: mp.norm(r(theta)) - radius
+    theta = newton(to_root, lambda theta: mp.diff(to_root, theta), (thetamin+thetaclose)/2.)
+    if theta:
+        return theta, r(theta), rdot(theta), thetadot(theta), t(theta)
 
 def get_2dtraj_in_ns(rin: mp.matrix, vin: mp.matrix, tin: float, k: float, radius: float) -> mp.matrix:
     omega = mp.sqrt(k / radius**3)
@@ -42,19 +63,30 @@ def plot_2dtraj_in_ns(rin: mp.matrix, vin: mp.matrix, tin: float, k: float, radi
 
     plt.plot(rsns.T[0], rsns.T[1])
 
-def find_ns_exit(rin: mp.matrix, vin: mp.matrix, tin: float, k: float, radius: float, n_points: int = 10_000) -> tuple:
+# def find_ns_exit(rin: mp.matrix, vin: mp.matrix, tin: float, k: float, radius: float, n_points: int = 10_000) -> tuple:
+#     omega = mp.sqrt(k / radius**3)
+#     r2d, v2d = get_2dtraj_in_ns(rin, vin, tin, k, radius)
+
+#     to_root = lambda angle: mp.norm(r2d(angle/omega+tin)) - radius
+
+#     angles = mp.linspace(0, 2*mp.pi, n_points, endpoint=False)
+#     to_root_vals = np.array([to_root(angle) for angle in angles])
+#     indices = np.where(to_root_vals[:-1]*to_root_vals[1:] < 0)[0]
+#     index = indices[0] if indices[0] else indices[1]
+
+#     angle_exit = mp.mpf(root_scalar(to_root, bracket=(angles[index], angles[index+1]), xtol=1e-15, rtol=1e-15).root)
+
+#     return r2d(angle_exit/omega+tin), v2d(angle_exit/omega+tin), angle_exit/omega+tin
+
+def find_ns_exit(rin: mp.matrix, vin: mp.matrix, tin: float, k: float, radius: float, epsilon: float = 1e-12) -> tuple:
     omega = mp.sqrt(k / radius**3)
     r2d, v2d = get_2dtraj_in_ns(rin, vin, tin, k, radius)
 
     to_root = lambda angle: mp.norm(r2d(angle/omega+tin)) - radius
-
-    angles = mp.linspace(0, 2*mp.pi, n_points, endpoint=False)
-    to_root_vals = np.array([to_root(angle) for angle in angles])
-    indices = np.where(to_root_vals[:-1]*to_root_vals[1:] < 0)[0]
-    index = indices[0] if indices[0] else indices[1]
-
-    angle_exit = mp.mpf(root_scalar(to_root, bracket=(angles[index], angles[index+1]), xtol=1e-15, rtol=1e-15).root)
-
+    angle_exit = mp.mpf('0.')
+    while abs(angle_exit) < epsilon or abs(angle_exit-mp.pi) < epsilon:
+        angle_exit = newton(to_root, lambda theta: mp.diff(to_root, theta), mp.pi*mp.rand()) % mp.pi
+    
     return r2d(angle_exit/omega+tin), v2d(angle_exit/omega+tin), angle_exit/omega+tin
 
 def get_2dtraj_through_ns(r02d: mp.matrix, v02d: mp.matrix, k: float, radius: float, t0: float = 0.) -> tuple:
@@ -64,7 +96,7 @@ def get_2dtraj_through_ns(r02d: mp.matrix, v02d: mp.matrix, k: float, radius: fl
     rin = mp.matrix([r2din*mp.cos(thetain), r2din*mp.sin(thetain)])
     vin = mp.matrix([rdotin*mp.cos(thetain) - r2din*thetadotin*mp.sin(thetain),
                     rdotin*mp.sin(thetain) + r2din*thetadotin*mp.cos(thetain)])
-
+    
     rout, vout, tout = find_ns_exit(rin, vin, tin, k, radius)
 
     tinfall = lambda theta: infall[-1](theta) - tout
@@ -139,7 +171,6 @@ def plot_3dtraj_through_ns(r0: mp.matrix, v0: mp.matrix, k: float, radius: float
     rsin = np.array([infall2d[0](theta) for theta in thetasin], dtype=float)
     rsout = np.array([outfall3d[0](theta) for theta in thetasout], dtype=float)
     rs = np.concatenate((rsin, rsout))
-    print(len(rs))
 
     return px.line_3d(x=rs[:, 0], y=rs[:, 1], z=rs[:, 2])
 
