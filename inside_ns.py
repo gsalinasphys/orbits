@@ -21,20 +21,6 @@ def newton(f: Callable, fprime: Callable, x0: mp.mpf, tol: float = 1e-12, maxite
         
     return x0
 
-# def enter_ns(r02d: mp.matrix, v02d: mp.matrix, k: float, radius: float, t0: float = 0.) -> tuple:
-#     (thetamin, _, thetamax), r, rdot, thetadot, t = get_2dtrajectory(r02d, v02d, k, t0)
-#     thetaclose = (thetamin+thetamax) / 2.
-
-#     try:
-#         root_found = root_scalar(lambda theta: mp.norm(r(theta))-radius, bracket=(thetamin, thetaclose), xtol=1e-15, rtol=1e-15)
-#         if root_found.converged:
-#             return mp.mpf(root_found.root), r(root_found.root), rdot(root_found.root), thetadot(root_found.root), t(root_found.root)
-#         else:
-#             return None
-#     except ValueError as e:
-#         print(e)
-#         return None
-
 def enter_ns(r02d: mp.matrix, v02d: mp.matrix, k: float, radius: float, t0: float = 0.) -> tuple:
     (thetamin, _, thetamax), r, rdot, thetadot, t = get_2dtrajectory(r02d, v02d, k, t0)
     thetaclose = (thetamin+thetamax) / 2.
@@ -62,21 +48,6 @@ def plot_2dtraj_in_ns(rin: mp.matrix, vin: mp.matrix, tin: float, k: float, radi
     rsns = np.array([rns(tns) for tns in tsns])
 
     plt.plot(rsns.T[0], rsns.T[1])
-
-# def find_ns_exit(rin: mp.matrix, vin: mp.matrix, tin: float, k: float, radius: float, n_points: int = 10_000) -> tuple:
-#     omega = mp.sqrt(k / radius**3)
-#     r2d, v2d = get_2dtraj_in_ns(rin, vin, tin, k, radius)
-
-#     to_root = lambda angle: mp.norm(r2d(angle/omega+tin)) - radius
-
-#     angles = mp.linspace(0, 2*mp.pi, n_points, endpoint=False)
-#     to_root_vals = np.array([to_root(angle) for angle in angles])
-#     indices = np.where(to_root_vals[:-1]*to_root_vals[1:] < 0)[0]
-#     index = indices[0] if indices[0] else indices[1]
-
-#     angle_exit = mp.mpf(root_scalar(to_root, bracket=(angles[index], angles[index+1]), xtol=1e-15, rtol=1e-15).root)
-
-#     return r2d(angle_exit/omega+tin), v2d(angle_exit/omega+tin), angle_exit/omega+tin
 
 def find_ns_exit(rin: mp.matrix, vin: mp.matrix, tin: float, k: float, radius: float, epsilon: float = 1e-12) -> tuple:
     omega = mp.sqrt(k / radius**3)
